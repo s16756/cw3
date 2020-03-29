@@ -22,18 +22,12 @@ namespace WebApplication.Controllers
             return Ok(_dbService.GetStudents());
         }
         
-        [HttpGet("{id}")]
-        public IActionResult GetStudent(int id)
+        [HttpGet("{indexNumber}")]
+        public IActionResult GetStudent(string indexNumber)
         {
-            if (id == 1)
-            {
-                return Ok("Kowalski");
-            }
-            else if (id == 2)
-            {
-                return Ok("Malewski");
-            }
-
+            var student = _dbService.GetStudent(indexNumber);
+            if (student != null)
+                return Ok(student);
             return NotFound("Nie znaleziono studenta");
         }
 
