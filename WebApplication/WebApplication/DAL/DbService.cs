@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
+using WebApplication.Dtos;
 using WebApplication.Models;
 
 namespace WebApplication.DAL
@@ -82,6 +83,103 @@ WHERE [s].[IndexNumber] = @IndexNumber
             }
             
             client.Close();
+        }
+
+        public int? GetStudiesIdByName(string name)
+        {
+            using var client = new SqlConnection(_configuration["ConnectionString"]);
+            client.Open();
+            using var command = new SqlCommand(@"SELECT TOP 1 [IdStudy] FROM [Studies] WHERE [Name] = @Name;", client);
+            command.Parameters.Add(new SqlParameter("Name", name));
+
+            var result = (int?)command.ExecuteScalar();
+
+            client.Close();
+
+            return result;
+        }
+
+        public bool IsIndexNumberUnique(string indexNumber)
+        {
+            using var client = new SqlConnection(_configuration["ConnectionString"]);
+            client.Open();
+            
+            using var command =
+                new SqlCommand(
+                    @"SELECT 1 FROM [Student] WHERE [IndexNumber] = @IndexNumber",
+                    client);
+            command.Parameters.Add(new SqlParameter("IndexNumber", indexNumber));
+            var result = Convert.ToBoolean(command.ExecuteScalar());
+            
+            client.Close();
+            return !result;
+        }
+
+        public void CreateStudent(StudentCreateDto dto, int studiesId)
+        {
+            using var client = new SqlConnection(_configuration["ConnectionString"]);
+            client.Open();
+            using var transaction = client.BeginTransaction();
+            try
+            {
+                using var command =
+                    new SqlCommand(
+                        @"SELECT TOP 1 [IdEnrollment] FROM [Enrollment] WHERE [IdStudy] = @StudyId AND [Semester] = 1;",
+                        client, transaction);
+                command.Parameters.Add(new SqlParameter("StudyId", studiesId));
+
+                var enrollmentId = (int?) command.ExecuteScalar();
+
+                if (!enrollmentId.HasValue)
+                {
+                    using var commandFindLatestId =
+                        new SqlCommand("SELECT MAX([IdEnrollment]) FROM [Enrollment];", client, transaction);
+                    var latestId = (int) commandFindLatestId.ExecuteScalar();
+
+                    using var createEnrollmentCommand = new SqlCommand(@"
+                        INSERT INTO [Enrollment](IdEnrollment, Semester, IdStudy, StartDate)
+                        VALUES (@Id, 1, @IdStudy, GETDATE());
+                    ", client, transaction);
+                    createEnrollmentCommand.Parameters.Add(new SqlParameter("Id", latestId + 1));
+                    createEnrollmentCommand.Parameters.Add(new SqlParameter("IdStudy", studiesId));
+
+                    createEnrollmentCommand.ExecuteNonQuery();
+
+                    enrollmentId = latestId + 1;
+                }
+
+                var dateSplitted = dto.BirthDate.Split('.');
+                var day = int.Parse(dateSplitted[0]);
+                var month = int.Parse(dateSplitted[1]);
+                var year = int.Parse(dateSplitted[2]);
+                var parsedDate = new DateTime(year, month, day);
+                
+                using var commandCreateStudent = 
+                    new SqlCommand(@"
+                    INSERT INTO [Student]([IndexNumber],[FirstName],[LastName],[BirthDate],[IdEnrollment])
+                    VALUES (@IndexNumber, @FirstName, @LastName, @BirthDate, @EnrolId);
+                    ", client, transaction);
+                commandCreateStudent.Parameters.AddRange(new []
+                {
+                    new SqlParameter("@IndexNumber", dto.IndexNumber),
+                    new SqlParameter("@FirstName", dto.FirstName),
+                    new SqlParameter("@LastName", dto.LastName),
+                    new SqlParameter("@BirthDate", parsedDate),
+                    new SqlParameter("@EnrolId", enrollmentId)
+                });
+
+                commandCreateStudent.ExecuteNonQuery();
+
+                transaction.Commit();
+            }
+            catch (Exception ex)
+            {
+                transaction.Rollback();
+            }
+            finally
+            {
+                client.Close();
+            }
         }
     }
 }

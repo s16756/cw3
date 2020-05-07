@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using WebApplication.Dtos;
 using WebApplication.Models;
 
 namespace WebApplication.DAL
@@ -8,5 +9,11 @@ namespace WebApplication.DAL
         public IEnumerable<Student> GetStudents();
 
         public IEnumerable<Student> GetStudent(string indexNumber);
+
+        public int? GetStudiesIdByName(string name);
+
+        public void CreateStudent(StudentCreateDto dto, int studiesId);
+
+        public bool IsIndexNumberUnique(string indexNumber);
     }
 }
