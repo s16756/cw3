@@ -44,5 +44,19 @@ namespace WebApplication.Controllers
 
             return Created("", "");
         }
+
+        [HttpPost("promotions")]
+        public IActionResult Promotions(PromotionsDto dto)
+        {
+            var studyId = _dbService.GetStudiesIdByName(dto.Studies);
+            if (!studyId.HasValue) return NotFound();
+
+            var enrollmentId = _dbService.GetEnrollmentByStudyIdAndSemester(studyId.Value, dto.Semester);
+            if (!enrollmentId.HasValue) return NotFound();
+            
+            _dbService.PromoteStudents(studyId.Value, dto.Semester);
+
+            return Created("", "");
+        }
     }
 }

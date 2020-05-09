@@ -10,11 +10,37 @@ namespace WebApplication.DAL
 {
     public class DbService : IDbService
     {
+        private const string ProcedureName = "Promotions";
         private readonly IConfiguration _configuration;
 
         public DbService(IConfiguration configuration)
         {
             _configuration = configuration;
+            
+            // Create procedure
+            using var client = new SqlConnection(_configuration["ConnectionString"]);
+            client.Open();
+            
+            using var command = new SqlCommand($@"
+CREATE OR ALTER PROCEDURE {ProcedureName}
+    @StudiesId INT,
+    @Semester INT
+AS BEGIN
+    DECLARE @NextEnrollmentId INT;
+    SELECT @NextEnrollmentId = IdEnrollment FROM [Enrollment] WHERE [IdStudy] = @StudiesId AND Semester = @Semester + 1;
+	IF @NextEnrollmentId IS NULL BEGIN
+		INSERT INTO Enrollment (IdEnrollment, Semester, IdStudy, StartDate)
+		SELECT MAX(IdEnrollment) + 1 AS IdEnrollment, @Semester + 1 as Semester, @StudiesId as IdStudy, GETDATE() as StartDate FROM Enrollment;
+
+		SELECT @NextEnrollmentId = IdEnrollment FROM [Enrollment] WHERE [IdStudy] = @StudiesId AND Semester = @Semester + 1;
+	END;
+
+	UPDATE Student SET IdEnrollment = @NextEnrollmentId
+	WHERE IdEnrollment = (SELECT TOP 1 IdEnrollment FROM [Enrollment] WHERE [IdStudy] = @StudiesId AND Semester = @Semester);
+END
+", client);
+            command.ExecuteNonQuery();
+            client.Close();
         }
 
         public IEnumerable<Student> GetStudents()
@@ -115,6 +141,31 @@ WHERE [s].[IndexNumber] = @IndexNumber
             return !result;
         }
 
+        public int? GetEnrollmentByStudyIdAndSemester(int studyId, int semester)
+        {
+            using var client = new SqlConnection(_configuration["ConnectionString"]);
+            client.Open();
+
+            try
+            {
+                using var command =
+                    new SqlCommand(
+                        @"SELECT TOP 1 [IdEnrollment] FROM [Enrollment] WHERE [IdStudy] = @StudyId AND [Semester] = @Semester;",
+                        client);
+                command.Parameters.AddRange(new[]
+                {
+                    new SqlParameter("StudyId", studyId),
+                    new SqlParameter("Semester", semester),
+                });
+
+                return (int?) command.ExecuteScalar();
+            }
+            finally
+            {
+                client.Close();
+            }
+        }
+
         public void CreateStudent(StudentCreateDto dto, int studiesId)
         {
             using var client = new SqlConnection(_configuration["ConnectionString"]);
@@ -122,13 +173,7 @@ WHERE [s].[IndexNumber] = @IndexNumber
             using var transaction = client.BeginTransaction();
             try
             {
-                using var command =
-                    new SqlCommand(
-                        @"SELECT TOP 1 [IdEnrollment] FROM [Enrollment] WHERE [IdStudy] = @StudyId AND [Semester] = 1;",
-                        client, transaction);
-                command.Parameters.Add(new SqlParameter("StudyId", studiesId));
-
-                var enrollmentId = (int?) command.ExecuteScalar();
+                var enrollmentId = GetEnrollmentByStudyIdAndSemester(studiesId, 1);
 
                 if (!enrollmentId.HasValue)
                 {
@@ -180,6 +225,22 @@ WHERE [s].[IndexNumber] = @IndexNumber
             {
                 client.Close();
             }
+        }
+
+        public void PromoteStudents(int studiesId, int semester)
+        {
+            using var client = new SqlConnection(_configuration["ConnectionString"]);
+            client.Open();
+            using var command = new SqlCommand(ProcedureName, client) {CommandType = CommandType.StoredProcedure};
+            command.Parameters.AddRange(new []
+            {
+                new SqlParameter("StudiesId", studiesId),
+                new SqlParameter("Semester", semester) 
+            });
+
+            command.ExecuteNonQuery();
+            
+            client.Close();
         }
     }
 }

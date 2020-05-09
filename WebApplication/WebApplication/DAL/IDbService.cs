@@ -15,5 +15,9 @@ namespace WebApplication.DAL
         public void CreateStudent(StudentCreateDto dto, int studiesId);
 
         public bool IsIndexNumberUnique(string indexNumber);
+
+        public int? GetEnrollmentByStudyIdAndSemester(int studyId, int semester);
+
+        public void PromoteStudents(int studiesId, int semester);
     }
 }
